@@ -67,6 +67,8 @@ close:6=libsystem_kernel.dylib+99604->tcp+3266;tcp+3266->tcp+3278;tcp+3278->libs
 close:6=libsystem_kernel.dylib+99604->tcp+3266;tcp+3266->tcp+3278;tcp+3278->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3296;tcp+3296->tcp+3318;tcp+3318->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3332;tcp+3332->tcp+3354;tcp+3354->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3368;tcp+3368->tcp+3390;tcp+3390->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3404;tcp+3404->libsystem_platform.dylib+4640;libsystem_platform.dylib+4989->tcp+3440;tcp+3440->tcp+3540;
 
 `echo ABC1234567890 | nc localhost 1234`
+
 Good job!% 
+
 write:6=libsystem_kernel.dylib+99604->tcp+3266;tcp+3266->tcp+3278;tcp+3278->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3296;tcp+3296->tcp+3318;tcp+3318->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3332;tcp+3332->tcp+3354;tcp+3354->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3368;tcp+3368->tcp+3390;tcp+3390->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3404;tcp+3404->libsystem_platform.dylib+4640;libsystem_platform.dylib+4989->tcp+3440;tcp+3440->tcp+3451;tcp+3451->libsystem_c.dylib+273904;libsystem_c.dylib+274110->tcp+3465;
 close:6=
