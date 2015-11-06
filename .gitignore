@@ -1,0 +1,7 @@
+obj-intel64
+obj-intel32
+*.o
+*.dylib
+*.log
+.idea/
+
