@@ -68,7 +68,7 @@ END_LEGAL */
 // See https://software.intel.com/sites/landingpage/pintool/docs/55942/Pin/html/index.html#InscountTLS
 #define PADSIZE 56  // 64 byte line size: 64-8
 #define INIT_CALLGRAPH_SIZE 1000
-#define PIPE_NAME "/tmp/rcovtrace"
+#define PIPE_NAME "/tmp/netcallgraph"
 
 #if defined(__APPLE__)
 #define SYS_ACCEPT (SYS_accept + 0x2000000)
