@@ -38,6 +38,7 @@ END_LEGAL */
 
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -210,8 +211,8 @@ static VOID traceImageLoad(IMG img, VOID *v) {
 }
 
 
-static int pipeWrite(std::string data) {
-    int totalWriteLen = 0;
+static size_t pipeWrite(std::string data) {
+    size_t totalWriteLen = 0;
     int writeLen = 0;
     size_t dataLen = data.length();
     while (totalWriteLen < dataLen) {
@@ -219,7 +220,7 @@ static int pipeWrite(std::string data) {
         if (writeLen < 1) {
             break;
         }
-        totalWriteLen += writeLen;
+        totalWriteLen += (size_t)writeLen;
     }
     return totalWriteLen;
 }
