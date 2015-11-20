@@ -1,5 +1,5 @@
 /*
- * File:   rcovtrace.cpp
+ * File:   netcovmap.cpp
  * Author: amoneger
  *
  * Created on September 4, 2015, 1:31 PM
@@ -46,11 +46,12 @@ END_LEGAL */
 #include <sys/syscall.h>
 #include <sys/types.h>  // mkfifo
 #include <sys/stat.h>   // mkfifo
+#include <algorithm>
 #include <map>
 #include <list>
 #include <iostream>
 #include <utility>
-#include <vector>
+#include <set>
 #include <fstream>
 #include <sstream>
 
@@ -67,7 +68,7 @@ END_LEGAL */
 // multiple threads do not contend for the same data cache line.
 // This avoids the false sharing problem.
 // See https://software.intel.com/sites/landingpage/pintool/docs/55942/Pin/html/index.html#InscountTLS
-#define PADSIZE 56  // 64 byte line size: 64-8
+#define PADSIZE 60  // 64 byte line size: 64-4
 #define PIPE_NAME "/tmp/netcovmap"
 
 #if defined(__APPLE__)
@@ -95,6 +96,7 @@ size_t traceCount = 0;
 static BOOL whitelistMode = false;
 std::map<THREADID, struct TraceInfo> threadInfoMap;
 std::map<std::string, std::pair<ADDRINT,ADDRINT> > moduleList;
+std::set<size_t> networkFDs;
 static TLS_KEY tlsKey;
 int pipe_fd = -1;
 
@@ -112,7 +114,6 @@ struct TraceInfo {
 
 struct ThreadInfo {
     UINT32 hasHitAccept;
-    UINT32 fd;
     UINT8 _pad[PADSIZE];
 };
 
@@ -250,13 +251,17 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
     ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(tlsKey, tid));
     ADDRINT syscallId = PIN_GetSyscallNumber(ctx, std);
     ADDRINT fd = PIN_GetSyscallArgument(ctx, std, 0);
+    BOOL isFdTraced = networkFDs.find(fd) != networkFDs.end();
     switch (syscallId) {
         case SYS_ACCEPT:
             threadInfo->hasHitAccept = 1;
             break;
         case SYS_RECVFROM:
+            // UDP case. Accept will not add FD to set, and recvfrom will be called directly.
+            networkFDs.insert(fd);
+            isFdTraced = TRUE;
         case SYS_READ:
-            if (threadInfo->fd == fd && threadInfoMap.count(tid) == 0) {
+            if (isFdTraced && threadInfoMap.count(tid) == 0) {
                 std::map<std::pair<ADDRINT,ADDRINT>, unsigned int> *coverageMap =
                         new std::map<std::pair<ADDRINT,ADDRINT>, unsigned int>();
                 TraceInfo traceInfo = {0, coverageMap, 0};
@@ -265,7 +270,7 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
             break;
         case SYS_SENDTO:
         case SYS_WRITE:
-            if (threadInfo->fd == fd && threadInfoMap.count(tid) != 0) {
+            if (isFdTraced && threadInfoMap.count(tid) != 0) {
                 TraceInfo *traceInfo = &(threadInfoMap[tid]);
                 std::ostringstream *traceBuffer = logCallGraph(tid, traceInfo->coverageMap);
                 if (!pipeWriteMessage(string("write"), fd, traceBuffer->str())) {
@@ -277,17 +282,17 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
             }
             break;
         case SYS_CLOSE:
-            if (threadInfo->fd == fd) {
+            if (isFdTraced) {
                 if (threadInfoMap.count(tid) != 0) {
                     TraceInfo *traceInfo = &(threadInfoMap[tid]);
                     std::ostringstream *traceBuffer = logCallGraph(tid, traceInfo->coverageMap);
                     if (!pipeWriteMessage(std::string("close"), fd, traceBuffer->str())) {
                         std::cerr << "Failed to write trace to pipe" << std::endl;
                     }
-                    threadInfo->fd = 0;
                     delete traceBuffer;
                     delete traceInfo->coverageMap;
                     threadInfoMap.erase(tid);
+                    networkFDs.erase(fd);
                 } else {
                     if (!pipeWriteMessage(std::string("close"), fd, std::string(""))) {
                         std::cerr << "Failed to write trace to pipe" << std::endl;
@@ -305,7 +310,8 @@ VOID traceSyscallExit(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v)
     ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(tlsKey, tid));
     if (threadInfo->hasHitAccept == 1) {
         threadInfo->hasHitAccept = 0;
-        threadInfo->fd = PIN_GetSyscallReturn(ctx, std);
+        size_t fd = PIN_GetSyscallReturn(ctx, std);
+        networkFDs.insert(fd);
     }
 }
 
