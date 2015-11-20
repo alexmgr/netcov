@@ -71,15 +71,20 @@ END_LEGAL */
 #define PIPE_NAME "/tmp/netcovmap"
 
 #if defined(__APPLE__)
-#define SYS_ACCEPT (SYS_accept + 0x2000000)
-#define SYS_READ (SYS_read + 0x2000000)
-#define SYS_WRITE (SYS_write + 0x2000000)
-#define SYS_CLOSE (SYS_close + 0x2000000)
+#define APPLE_OFFSET_SYSCALL(SYSCALL) (SYSCALL + 0x2000000)
+#define SYS_ACCEPT APPLE_OFFSET_SYSCALL(SYS_accept)
+#define SYS_READ APPLE_OFFSET_SYSCALL(SYS_read)
+#define SYS_WRITE APPLE_OFFSET_SYSCALL(SYS_write)
+#define SYS_CLOSE APPLE_OFFSET_SYSCALL(SYS_close)
+#define SYS_RECVFROM APPLE_OFFSET_SYSCALL(SYS_recvfrom)
+#define SYS_SENDTO APPLE_OFFSET_SYSCALL(SYS_sendto)
 #else
 #define SYS_ACCEPT SYS_accept
 #define SYS_READ SYS_read
 #define SYS_WRITE SYS_write
 #define SYS_CLOSE SYS_close
+#define SYS_RECVFROM SYS_recvfrom
+#define SYS_SENDTO SYS_sendto
 #endif
 
 
@@ -249,6 +254,7 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
         case SYS_ACCEPT:
             threadInfo->hasHitAccept = 1;
             break;
+        case SYS_RECVFROM:
         case SYS_READ:
             if (threadInfo->fd == fd && threadInfoMap.count(tid) == 0) {
                 std::map<std::pair<ADDRINT,ADDRINT>, unsigned int> *coverageMap =
@@ -257,6 +263,7 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
                 threadInfoMap[tid] = traceInfo;
             }
             break;
+        case SYS_SENDTO:
         case SYS_WRITE:
             if (threadInfo->fd == fd && threadInfoMap.count(tid) != 0) {
                 TraceInfo *traceInfo = &(threadInfoMap[tid]);
