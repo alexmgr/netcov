@@ -92,25 +92,20 @@ END_LEGAL */
 KNOB<std::string> KnobModuleList(KNOB_MODE_APPEND, "pintool", "m", "", "whitelist of module names, use more than once");
 
 
-size_t traceCount = 0;
 static BOOL whitelistMode = false;
-std::map<THREADID, struct TraceInfo> threadInfoMap;
 std::map<std::string, std::pair<ADDRINT,ADDRINT> > moduleList;
 std::set<size_t> networkFDs;
-static TLS_KEY tlsKey;
+static TLS_KEY threadInfoKey;
+static TLS_KEY traceInfoKey;
 int pipe_fd = -1;
 
-
-struct BBLEdge {
-    ADDRINT parent;
-    ADDRINT child;
-};
 
 struct TraceInfo {
     ADDRINT prevAddress;
     std::map<std::pair<ADDRINT,ADDRINT>, unsigned int> *coverageMap;
     size_t hitCount;
 };
+
 
 struct ThreadInfo {
     UINT32 hasHitAccept;
@@ -119,7 +114,7 @@ struct ThreadInfo {
 
 
 UINT32 Usage() {
-    std::cout << "CodeCoverage tool for dumping BBL control flows" << std::endl;
+    std::cout << "Code coverage tool for dumping BBL control flows of running network daemons" << std::endl;
     std::cout << KNOB_BASE::StringKnobSummary() << std::endl;
     return 2;
 }
@@ -160,9 +155,9 @@ static std::ostringstream* logCallGraph(const THREADID tid,
 
 
 static VOID logBasicBlock(THREADID tid, ADDRINT address) {
+    TraceInfo *traceInfo = static_cast<TraceInfo*>(PIN_GetThreadData(traceInfoKey, tid));
     // We have a new thread here. Initialize the per thread call graph
-    if (threadInfoMap.count(tid) != 0) {
-        TraceInfo *traceInfo = &(threadInfoMap[tid]);
+    if (traceInfo->coverageMap != 0) {
         if (traceInfo->prevAddress != 0) {
             (*(traceInfo->coverageMap))[std::make_pair(traceInfo->prevAddress, address)]++;
             traceInfo->prevAddress = address;
@@ -248,7 +243,8 @@ static BOOL pipeWriteMessage(std::string msgType, size_t fd, std::string payload
 
 
 VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v) {
-    ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(tlsKey, tid));
+    ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(threadInfoKey, tid));
+    TraceInfo *traceInfo = static_cast<TraceInfo*>(PIN_GetThreadData(traceInfoKey, tid));
     ADDRINT syscallId = PIN_GetSyscallNumber(ctx, std);
     ADDRINT fd = PIN_GetSyscallArgument(ctx, std, 0);
     BOOL isFdTraced = networkFDs.find(fd) != networkFDs.end();
@@ -261,37 +257,34 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
             networkFDs.insert(fd);
             isFdTraced = TRUE;
         case SYS_READ:
-            if (isFdTraced && threadInfoMap.count(tid) == 0) {
+            if (isFdTraced && traceInfo->coverageMap == 0) {
                 std::map<std::pair<ADDRINT,ADDRINT>, unsigned int> *coverageMap =
                         new std::map<std::pair<ADDRINT,ADDRINT>, unsigned int>();
-                TraceInfo traceInfo = {0, coverageMap, 0};
-                threadInfoMap[tid] = traceInfo;
+                traceInfo->coverageMap = coverageMap;
             }
             break;
         case SYS_SENDTO:
         case SYS_WRITE:
-            if (isFdTraced && threadInfoMap.count(tid) != 0) {
-                TraceInfo *traceInfo = &(threadInfoMap[tid]);
+            if (isFdTraced && traceInfo->coverageMap != 0) {
                 std::ostringstream *traceBuffer = logCallGraph(tid, traceInfo->coverageMap);
                 if (!pipeWriteMessage(string("write"), fd, traceBuffer->str())) {
                     std::cerr << "Failed to write trace to pipe" << std::endl;
                 }
                 delete traceBuffer;
                 delete traceInfo->coverageMap;
-                threadInfoMap.erase(tid);
+                traceInfo->coverageMap = 0;
             }
             break;
         case SYS_CLOSE:
             if (isFdTraced) {
-                if (threadInfoMap.count(tid) != 0) {
-                    TraceInfo *traceInfo = &(threadInfoMap[tid]);
+                if (traceInfo->coverageMap != 0) {
                     std::ostringstream *traceBuffer = logCallGraph(tid, traceInfo->coverageMap);
                     if (!pipeWriteMessage(std::string("close"), fd, traceBuffer->str())) {
                         std::cerr << "Failed to write trace to pipe" << std::endl;
                     }
                     delete traceBuffer;
                     delete traceInfo->coverageMap;
-                    threadInfoMap.erase(tid);
+                    traceInfo->coverageMap = 0;
                     networkFDs.erase(fd);
                 } else {
                     if (!pipeWriteMessage(std::string("close"), fd, std::string(""))) {
@@ -307,7 +300,7 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
 
 
 VOID traceSyscallExit(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v) {
-    ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(tlsKey, tid));
+    ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(threadInfoKey, tid));
     if (threadInfo->hasHitAccept == 1) {
         threadInfo->hasHitAccept = 0;
         size_t fd = PIN_GetSyscallReturn(ctx, std);
@@ -318,17 +311,22 @@ VOID traceSyscallExit(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v)
 
 VOID traceThreadStart(THREADID tid, CONTEXT *ctx, INT32 flags, VOID *v)
 {
-    ThreadInfo *threadInfo = new ThreadInfo;
+    ThreadInfo *threadInfo = new ThreadInfo();
     threadInfo->hasHitAccept = 0;
-    PIN_SetThreadData(tlsKey, threadInfo, tid);
+    PIN_SetThreadData(threadInfoKey, threadInfo, tid);
+    TraceInfo *traceInfo = new TraceInfo();
+    PIN_SetThreadData(traceInfoKey, traceInfo, tid);
 }
 
 
 VOID traceThreadExit(THREADID tid, const CONTEXT *ctx, INT32 flags, VOID *v)
 {
-    ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(tlsKey, tid));
+    ThreadInfo *threadInfo = static_cast<ThreadInfo*>(PIN_GetThreadData(threadInfoKey, tid));
     delete threadInfo;
-    PIN_SetThreadData(tlsKey, 0, tid);
+    PIN_SetThreadData(threadInfoKey, 0, tid);
+    TraceInfo *traceInfo = static_cast<TraceInfo*>(PIN_GetThreadData(traceInfoKey, tid));
+    delete traceInfo;
+    PIN_SetThreadData(traceInfoKey, 0, tid);
 }
 
 
@@ -361,7 +359,8 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    tlsKey = PIN_CreateThreadDataKey(NULL);
+    threadInfoKey = PIN_CreateThreadDataKey(NULL);
+    traceInfoKey = PIN_CreateThreadDataKey(NULL);
     PIN_AddThreadStartFunction(traceThreadStart, 0);
     PIN_AddThreadFiniFunction(traceThreadExit, 0);
 
@@ -375,5 +374,3 @@ int main(int argc, char **argv) {
 
     return 0;
 }
-
-
