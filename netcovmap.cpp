@@ -79,6 +79,8 @@ END_LEGAL */
 #define SYS_CLOSE APPLE_OFFSET_SYSCALL(SYS_close)
 #define SYS_RECVFROM APPLE_OFFSET_SYSCALL(SYS_recvfrom)
 #define SYS_SENDTO APPLE_OFFSET_SYSCALL(SYS_sendto)
+#define SYS_RECVMSG APPLE_OFFSET_SYSCALL(SYS_recvmsg)
+#define SYS_SENDMSG APPLE_OFFSET_SYSCALL(SYS_sendmsg)
 #else
 #define SYS_ACCEPT SYS_accept
 #define SYS_READ SYS_read
@@ -86,6 +88,8 @@ END_LEGAL */
 #define SYS_CLOSE SYS_close
 #define SYS_RECVFROM SYS_recvfrom
 #define SYS_SENDTO SYS_sendto
+#define SYS_RECVMSG SYS_recvmsg
+#define SYS_SENDMSG SYS_sendmsg
 #endif
 
 
@@ -252,6 +256,7 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
         case SYS_ACCEPT:
             threadInfo->hasHitAccept = 1;
             break;
+        case SYS_RECVMSG:
         case SYS_RECVFROM:
             // UDP case. Accept will not add FD to set, and recvfrom will be called directly.
             networkFDs.insert(fd);
@@ -263,6 +268,7 @@ VOID traceSyscallEntry(THREADID tid, CONTEXT *ctx, SYSCALL_STANDARD std, VOID *v
                 traceInfo->coverageMap = coverageMap;
             }
             break;
+        case SYS_SENDMSG:
         case SYS_SENDTO:
         case SYS_WRITE:
             if (isFdTraced && traceInfo->coverageMap != 0) {
