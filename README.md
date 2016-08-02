@@ -2,7 +2,7 @@ Netcov purpose is to perform tracing of network daemons at runtime to collect
 code coverage information.
 
 #How to build:
-* `git clone git@secrepo.eng.citrite.net:alexmon/netcov.git`
+* `git clone https://github.com/alexmgr/netcov/`
 * `PIN_ROOT=~/src/pin-2.14-71313-clang.5.1-mac/ make`
 
 #How to run:
